@@ -2,78 +2,85 @@ import { useEffect, useRef } from 'react';
 
 const logoUrl = 'https://i.postimg.cc/KcQZk3yC/srmsweets.jpg';
 const TOTAL_FRAMES = 240;
-const frameSrc = (index: number) => `/images/ezgif-frame-${String(index).padStart(3, '0')}.jpg`;
+const frameSrc = (index: number) =>
+  `/images/ezgif-frame-${String(index).padStart(3, '0')}.jpg`;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+function clamp(v: number, lo: number, hi: number) {
+  return Math.min(Math.max(v, lo), hi);
 }
 
 export default function App() {
-  const heroRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef<HTMLImageElement>(null);
-  const currentFrame = useRef(1);
-  const requestRef = useRef<number | null>(null);
+  // heroScrollRef → the tall wrapper that drives scroll progress
+  const heroScrollRef = useRef<HTMLDivElement>(null);
+  const frameRef      = useRef<HTMLImageElement>(null);
+  const displayFrame  = useRef(1);   // float, lerp target
+  const targetFrame   = useRef(1);   // integer set on scroll
+  const shownFrame    = useRef(1);   // last src we wrote
+  const rafId         = useRef<number | null>(null);
 
   useEffect(() => {
+    // ── preload all 240 frames ──────────────────────────────────
     const frames: HTMLImageElement[] = [];
-    for (let i = 1; i <= TOTAL_FRAMES; i += 1) {
-      const image = new Image();
-      image.src = frameSrc(i);
-      frames.push(image);
+    for (let i = 1; i <= TOTAL_FRAMES; i++) {
+      const img = new Image();
+      img.src = frameSrc(i);
+      frames.push(img);
     }
 
-    const updateFrame = () => {
-      const hero = heroRef.current;
-      const frameImage = frameRef.current;
-      if (!hero || !frameImage) return;
-
-      const heroTop = hero.offsetTop;
-      const heroHeight = hero.clientHeight;
-      const scrollDistance = window.scrollY - heroTop;
-      const maxDistance = Math.max(heroHeight - window.innerHeight, 1);
-      const progress = clamp(scrollDistance / maxDistance, 0, 1);
-      const nextFrame = Math.min(
-        TOTAL_FRAMES,
-        Math.max(1, Math.round(progress * (TOTAL_FRAMES - 1)) + 1)
-      );
-
-      if (nextFrame !== currentFrame.current) {
-        currentFrame.current = nextFrame;
-        frameImage.src = frameSrc(nextFrame);
-      }
+    // ── map scroll → target frame ───────────────────────────────
+    const onScroll = () => {
+      const section = heroScrollRef.current;
+      if (!section) return;
+      const scrollable = section.offsetHeight - window.innerHeight;
+      const scrolled   = window.scrollY - section.offsetTop;
+      const progress   = clamp(scrolled / scrollable, 0, 1);
+      targetFrame.current = Math.round(progress * (TOTAL_FRAMES - 1)) + 1;
     };
 
-    const onScroll = () => {
-      if (requestRef.current !== null) return;
-      requestRef.current = window.requestAnimationFrame(() => {
-        updateFrame();
-        requestRef.current = null;
-      });
+    // ── rAF loop: lerp displayFrame → targetFrame ───────────────
+    const tick = () => {
+      const img = frameRef.current;
+      if (img) {
+        const cur = displayFrame.current;
+        const tgt = targetFrame.current;
+        // 0.055 = slow, buttery lerp (lower = slower)
+        displayFrame.current = cur + (tgt - cur) * 0.055;
+
+        const rounded = clamp(Math.round(displayFrame.current), 1, TOTAL_FRAMES);
+        if (rounded !== shownFrame.current) {
+          shownFrame.current = rounded;
+          const f = frames[rounded - 1];
+          if (f && f.complete && f.naturalWidth > 0) {
+            img.src = f.src;
+          }
+        }
+      }
+      rafId.current = requestAnimationFrame(tick);
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    updateFrame();
+    rafId.current = requestAnimationFrame(tick);
 
     return () => {
       window.removeEventListener('scroll', onScroll);
-      if (requestRef.current !== null) {
-        window.cancelAnimationFrame(requestRef.current);
-      }
+      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
     };
   }, []);
 
   return (
     <>
+      {/* ── Header: centered logo + nav row below (like Aswins) ── */}
       <header className="header">
-        <div className="header-inner">
-          <a className="brand" href="#top">
-            <img className="brand-logo" src={logoUrl} alt="SRM Sweets & Cakes logo" />
+        <div className="header-brand-row">
+          <a className="brand" href="#hero">
+            <img className="brand-logo" src={logoUrl} alt="SRM Sweets & Cakes" />
             <div>
               <span className="brand-title">SRM Sweets & Cakes</span>
               <span className="brand-subtitle">Palayapalayam</span>
             </div>
           </a>
-
+        </div>
+        <div className="header-nav-row">
           <nav className="nav">
             <a href="#overview">Overview</a>
             <a href="#location">Location</a>
@@ -84,62 +91,69 @@ export default function App() {
       </header>
 
       <main>
-        <section className="hero" id="top" ref={heroRef}>
-          <div className="hero-background" />
-          <div className="hero-frame-bg">
+        {/* ── Hero: tall scroll wrapper → sticky full-viewport frame ── */}
+        <div ref={heroScrollRef} className="hero-scroll" id="hero">
+          <div className="hero-sticky">
+
+            {/* Full-size animation frame — behind everything */}
             <img
               ref={frameRef}
               src={frameSrc(1)}
-              alt="SRM animation frame"
-              className="hero-frame-bg-image"
+              alt="SRM animation"
+              className="hero-frame-img"
             />
-          </div>
-          <div className="hero-panel">
-            <div className="hero-copy">
-              <span className="eyebrow">Cake shop</span>
-              <h1>SRM Sweets & Cakes - Palayapalayam</h1>
+
+            {/* Gradient scrim so text is readable */}
+            <div className="hero-scrim" />
+
+            {/* Text content on top */}
+            <div className="hero-content">
+              <span className="eyebrow">Cake shop · Erode</span>
+              <h1>SRM Sweets<br />& Cakes</h1>
               <p>
-                A warm, modern cake and sweet destination in Erode. Premium handcrafted treats, delicious service, and a welcoming local experience.
+                Premium handcrafted treats, celebration cakes, and traditional
+                sweets — crafted with love in Palayapalayam.
               </p>
               <div className="hero-meta">
                 <div>
-                  <strong>3.9</strong>
-                  <span>(713 reviews)</span>
+                  <strong>3.9 ★</strong>
+                  <span>713 reviews</span>
                 </div>
                 <div>
-                  <strong>₹1–200</strong>
-                  <span>Affordable | Cake shop</span>
+                  <strong>₹1 – 200</strong>
+                  <span>Affordable</span>
                 </div>
               </div>
               <div className="hero-actions">
-                <a className="button primary" href="#location">
-                  View location
-                </a>
-                <a className="button secondary" href="#hours">
-                  Opening hours
-                </a>
+                <a className="button primary" href="#location">View location</a>
+                <a className="button secondary" href="#hours">Opening hours</a>
               </div>
             </div>
-          </div>
-        </section>
 
+          </div>
+        </div>
+
+        {/* ── Overview ─────────────────────────────────────────── */}
         <section className="section section-overview" id="overview">
           <div className="content-grid">
             <div className="content-card">
               <h2>Warm Hospitality</h2>
               <p>
-                Every order is made with care, from classic sweets to celebration cakes. A neat, elegant presentation that matches the SRM brand tone.
+                Every order is made with care, from classic sweets to celebration
+                cakes. A neat, elegant presentation that matches the SRM brand tone.
               </p>
             </div>
             <div className="content-card">
               <h2>Made for Sharing</h2>
               <p>
-                Enjoy city favourites like fresh cakes, ladoos, and gift-ready sweets that feel premium yet welcoming.
+                Enjoy city favourites like fresh cakes, ladoos, and gift-ready
+                sweets that feel premium yet welcoming.
               </p>
             </div>
           </div>
         </section>
 
+        {/* ── Location ─────────────────────────────────────────── */}
         <section className="section section-location" id="location">
           <div className="section-left">
             <div className="info-block">
@@ -153,7 +167,6 @@ export default function App() {
               <p>Edayankattuvalasu, Erode, Tamil Nadu 638004</p>
             </div>
           </div>
-
           <div className="map-card">
             <div className="map-header">
               <h2>Find us on the map</h2>
@@ -167,22 +180,24 @@ export default function App() {
           </div>
         </section>
 
+        {/* ── Hours ────────────────────────────────────────────── */}
         <section className="section section-hours" id="hours">
           <div className="hours-card">
             <span className="section-label">Opening hours</span>
             <ul>
-              <li>Friday: 9 am – 10 pm</li>
-              <li>Saturday: 9 am – 10 pm</li>
-              <li>Sunday: 9 am – 10 pm</li>
               <li>Monday: 9 am – 10 pm</li>
               <li>Tuesday: 9 am – 10 pm</li>
               <li>Wednesday: 9 am – 10 pm</li>
               <li>Thursday: 9 am – 10 pm</li>
+              <li>Friday: 9 am – 10 pm</li>
+              <li>Saturday: 9 am – 10 pm</li>
+              <li>Sunday: 9 am – 10 pm</li>
             </ul>
           </div>
         </section>
       </main>
 
+      {/* ── Footer ───────────────────────────────────────────────── */}
       <footer className="footer" id="footer">
         <div className="footer-inner">
           <div>
